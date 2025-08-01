@@ -8,21 +8,31 @@ export class UserRepository {
     private client: Client;
 
     constructor() {
-        const { PG_CONN_STRING, PG_USER, PG_PASSWORD } = process.env;
+        const { DB_HOST, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
 
-        if (!PG_CONN_STRING || !PG_USER || !PG_PASSWORD) {
+        if (!DB_HOST || !DB_USER || !DB_PASSWORD || !DB_NAME) {
             throw new Error('Missing database environment variables');
         }
 
+
         this.client = new Client({
-            connectionString: PG_CONN_STRING,
-            user: PG_USER,
-            password: PG_PASSWORD,
+            host: DB_HOST,
+            user: DB_USER,
+            password: DB_PASSWORD,
+            database: DB_NAME,
+            ssl: {
+                rejectUnauthorized: false,
+            },
+            connectionTimeoutMillis: 5000,
         });
     }
 
     async connect() {
-        await this.client.connect();
+        try {
+            await this.client.connect();
+        } catch (e) {
+            console.error("Failed to connect to the database:", e);
+        }
     }
 
     async disconnect() {
@@ -30,31 +40,30 @@ export class UserRepository {
     }
 
     async initTable() {
-        await this.client.query(
-            `
+        console.log('Initializing users table...');
+        await this.client.query(`
               CREATE TABLE IF NOT EXISTS users (
                 address TEXT PRIMARY KEY,
                 session_sigs TEXT NOT NULL,
                 lit_id TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
               )
             `
         );
     }
 
     async upsertUser(user: User): Promise<void> {
-        const { address, session_sigs } = user;
-        await this.client.query(
-            `
-              INSERT INTO users (address, session_sigs)
-              VALUES ($1, $2)
+        const { address, lit_id, session_sigs } = user;
+        await this.client.query(`
+              INSERT INTO users (address, lit_id, session_sigs)
+              VALUES ($1, $2, $3)
               ON CONFLICT (address) DO UPDATE SET
                 session_sigs = EXCLUDED.session_sigs,
                 lit_id = EXCLUDED.lit_id,
-                updated_at = NOW();
+                updated_at = NOW()
           `,
-            [address, session_sigs]
+            [address, lit_id, session_sigs]
         );
     }
 

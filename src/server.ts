@@ -31,10 +31,12 @@ app.post('/signup', async (req: Request<{}, {}, SignupRequestBody>, res: Respons
     const { address, lit_id, pkpSessionSigs } = req.body;
 
     if (!address || !lit_id || !pkpSessionSigs) {
+        console.error('Missing required fields in signup request:', { address, lit_id, pkpSessionSigs });
         return res.status(400).json({ error: 'Missing id or pkpSessionSigs' });
     }
 
     try {
+        console.log(`Received signup request for address: ${address}`);
         await userRepository.upsertUser({
             address: address,
             lit_id: lit_id,
@@ -99,6 +101,8 @@ async function startScheduler() {
 
 app.listen(PORT, async () => {
     const res = await initializeLit()
+    await userRepository.connect();
+    // await userRepository.initTable()
     litNodeClient = res.litNodeClient;
     await startScheduler()
     console.log(`🚀 Server is running on http://localhost:${PORT}`);

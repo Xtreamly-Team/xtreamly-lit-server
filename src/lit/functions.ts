@@ -18,20 +18,20 @@ import { executeHyperliquidAction } from "./hyperliquid_claude.js";
 dotenv.config();
 
 export async function initializeLit() {
-	console.log("Start")
-
-	console.log(process.env.ETHEREUM_PRIVATE_KEY)
-	console.log(process.env.LIT_PJP_PUBLIC_KEY)
+	// console.log("Start")
+	//
+	// console.log(process.env.ETHEREUM_PRIVATE_KEY)
+	// console.log(process.env.LIT_PJP_PUBLIC_KEY)
 
 	const ethersSigner = new ethers.Wallet(
 		process.env.ETHEREUM_PRIVATE_KEY,
 		new ethers.providers.JsonRpcProvider(LIT_RPC.CHRONICLE_YELLOWSTONE)
 	);
 
-	console.log("Private Key")
-	console.log(ethersSigner.privateKey) // 0x...
-	console.log("Public Key")
-	console.log(ethersSigner.publicKey)
+	// console.log("Private Key")
+	// console.log(ethersSigner.privateKey) // 0x...
+	// console.log("Public Key")
+	// console.log(ethersSigner.publicKey)
 
 	let litNodeClient = new LitNodeClient({
 		litNetwork: LIT_NETWORK.DatilDev,
