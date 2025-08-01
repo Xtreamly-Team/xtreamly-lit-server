@@ -1,9 +1,11 @@
 import express, { Request, Response } from 'express';
-import { writeFile, readdir } from 'fs/promises';
 import cron from 'node-cron';
-import { initializeLit, readPkpSessionSigsFromFile, writePkpSessionSigsToFile } from './lit/functions.js';
+import { initializeLit } from './lit/functions.js';
 
 import dotenv from 'dotenv';
+import { UserRepository } from './db.js';
+import { TradeParams, Trader } from './trade.js';
+import { LitNodeClient } from '@lit-protocol/lit-node-client';
 dotenv.config();
 
 const app = express();
@@ -11,86 +13,94 @@ const PORT = 4002;
 
 app.use(express.json());
 
-// Define the expected shape of the request body
+let litNodeClient: LitNodeClient
+const userRepository = new UserRepository()
+const trader = new Trader(litNodeClient)
+
 interface SignupRequestBody {
-    id: string;
+    address: string;
+    lit_id: string;
     pkpSessionSigs: string; // Should be a stringified JSON
 }
 
-
-let litNodeClient
-let pkpPublicKey
-let ethersSigner
-
-async function initialize() {
-    const res = await initializeLit()
-    litNodeClient = res.litNodeClient;
-    pkpPublicKey = res.pkpPublicKey;
-    ethersSigner = res.ethersSigner;
+interface TestTradeRequestBody extends TradeParams {
+    address: string;
 }
 
-async function getUserFiles() {
-    const files = await readdir('./users', { withFileTypes: true });
-    return files.map(file => file.isFile() ? file.name : null).filter(Boolean);
-}
+app.post('/signup', async (req: Request<{}, {}, SignupRequestBody>, res: Response) => {
+    const { address, lit_id, pkpSessionSigs } = req.body;
 
-async function executeTradeForUsers() {
-    console.log("Checking volatility...");
-    const volatilityPrediction = await fetch(`https://api.xtreamly.io/volatility_prediction_pos?symbol=ETH&horizon=60`, {
-        method: 'GET',
-        headers: {
-            'x-api-key': process.env.XTREAMLY_API_KEY,
-        },
-    })
-    const volatility = (await volatilityPrediction.json())['volatility'];
-    console.log("Volatility prediction:", volatility);
-    if (volatility > 0.008260869599999996) {
-        console.log(`Volatility is high: ${volatility}. Executing trades for users...`);
-        for (const file of await getUserFiles()) {
-            try {
-                const userData = await readPkpSessionSigsFromFile(file);
-                if (!userData) continue;
-
-                const userPkpSessionSigs = JSON.parse(userData);
-                const userId = file.replace('.json', '');
-
-                console.log(`Executing trade for user ${file}:`);
-                // TODO: Call Xtreamly Backend API and enforce policy
-
-            } catch (err) {
-                console.error(`Error processing file ${file}:`, err);
-            }
-
-        }
-    }
-}
-
-cron.schedule('* * * * *', async () => {
-    console.log(`Running scheduled API call at ${new Date().toISOString()}`);
-    try {
-        await executeTradeForUsers()
-    } catch (err) {
-    }
-});
-
-app.post('/user_signup', async (req: Request<{}, {}, SignupRequestBody>, res: Response) => {
-    const { id, pkpSessionSigs } = req.body;
-
-    if (!id || !pkpSessionSigs) {
+    if (!address || !lit_id || !pkpSessionSigs) {
         return res.status(400).json({ error: 'Missing id or pkpSessionSigs' });
     }
 
     try {
-        const filePath = `./users/${id}.json`
-        await writePkpSessionSigsToFile(filePath, pkpSessionSigs);
-        res.status(200).json({ success: true, message: `Saved to ${filePath}` });
+        await userRepository.upsertUser({
+            address: address,
+            lit_id: lit_id,
+            session_sigs: pkpSessionSigs,
+        })
+        res.status(200).json({ success: true, message: `Successful signup: ${address}` });
     } catch (err) {
         console.error('Error writing file:', err);
-        res.status(500).json({ error: 'Failed to write file' });
+        res.status(500).json({ error: `Failed to signup: ${address}` });
     }
 });
 
-app.listen(PORT, () => {
+app.get('/test_trade', async (req: Request<{}, {}, TestTradeRequestBody>, res: Response) => {
+
+    await userRepository.connect();
+    const { address, symbol, side, amount } = req.body;
+    const user = await userRepository.getUser(address);
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!symbol || !side || !amount) {
+        return res.status(400).json({ error: 'Missing trade parameters' });
+    }
+
+    try {
+        const tradeParams: TradeParams = {
+            symbol: symbol,
+            side: side,
+            amount: amount
+        };
+        await trader.tradeForUsers([user], tradeParams);
+        res.status(200).json({ success: true, message: `Trade executed for user ${address}` });
+    } catch (err) {
+        console.error('Error executing trade:', err);
+        res.status(500).json({ error: `Failed to execute trade for user ${address}` });
+    }
+})
+
+async function startScheduler() {
+    const tradeSymbols = process.env.TRADE_SYMBOLS?.split(',') || ['ETH']
+    const cronString = process.env.CRON_STRING || '* * * * *'; // Default to every minute if not set
+    console.log("Trade symbols:", tradeSymbols);
+    cron.schedule(cronString, async () => {
+        console.log(`Running scheduled API call at ${new Date().toISOString()}`);
+        try {
+            for (let symbol of tradeSymbols) {
+                console.log(`Checking trades for symbol: ${symbol}`);
+                let tradeParams = await trader.shouldTrade(symbol);
+                if (tradeParams) {
+                    const users = await userRepository.getAllUsers();
+                    await trader.tradeForUsers(users, tradeParams);
+                }
+            }
+        } catch (err) {
+            console.error('Error during scheduled task:', err);
+        }
+    });
+    console.log('Scheduler started: Every minute');
+}
+
+
+app.listen(PORT, async () => {
+    const res = await initializeLit()
+    litNodeClient = res.litNodeClient;
+    await startScheduler()
     console.log(`🚀 Server is running on http://localhost:${PORT}`);
 });
 

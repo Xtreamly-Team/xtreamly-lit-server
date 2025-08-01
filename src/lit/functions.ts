@@ -13,6 +13,8 @@ import { executeDecryptPrivateAction } from "./decrypt_private_action.js";
 const { generatePrivateKey, importPrivateKey, listEncryptedKeyMetadata, exportPrivateKey, getEncryptedKey } = api;
 
 import dotenv from 'dotenv';
+// import { executeHyperliquidAction } from "./hyperliquid.js";
+import { executeHyperliquidAction } from "./hyperliquid_claude.js";
 dotenv.config();
 
 export async function initializeLit() {
@@ -51,12 +53,12 @@ export async function initializeLit() {
 
 export async function writePkpSessionSigsToFile(filename: string, pkpSessionSigs: any) {
 	const json = JSON.stringify(pkpSessionSigs, null, 2); // `2` = pretty print
-	writeFileSync(`${filename}.json`, json);
+	writeFileSync(filename, json);
 	console.log(`Wrote PKP Session Sigs to file ${filename}`);
 }
 
 export async function readPkpSessionSigsFromFile(filename: string): Promise<any> {
-	const data = readFileSync(`${filename}.json`, 'utf8');
+	const data = readFileSync(`${filename}`, 'utf8');
 	const pkpSessionSigs: any = JSON.parse(data);
 	console.log(`Read PKP Session Sigs from file ${filename}`);
 	return pkpSessionSigs;
@@ -95,5 +97,39 @@ export async function callUnwrapPrivateKeyOnAction(
 		ciphertext,
 		dataToEncryptHash,
 	)
+
+}
+
+export async function callHyperliquidAction(
+	litNodeClient: LitNodeClient,
+	pkpSessionSigs: any,
+	id: string,
+) {
+
+	let sessionSig = getFirstSessionSig(pkpSessionSigs);
+	let pkpAddress = getPkpAddressFromSessionSig(sessionSig);
+	console.log("PKP Address from Session Sig:", pkpAddress); // This same as LIT_PKP_PUBLIC_KEY
+	let accessControlCondition = getPkpAccessControlCondition(pkpAddress);
+
+	const {
+		ciphertext,
+		dataToEncryptHash,
+	} = await getEncryptedPrivateKeyMetaData(litNodeClient, pkpSessionSigs, id)
+
+	console.log("Going to call execute decrypt private action")
+	await executeHyperliquidAction(
+		litNodeClient,
+		pkpSessionSigs,
+		[accessControlCondition],
+		ciphertext,
+		dataToEncryptHash,
+	)
+	// await executeHyperliquidAction(
+	// 	litNodeClient,
+	// 	pkpSessionSigs,
+	// 	[accessControlCondition],
+	// 	ciphertext,
+	// 	dataToEncryptHash,
+	// )
 
 }

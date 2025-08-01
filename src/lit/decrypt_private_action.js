@@ -25,14 +25,16 @@ const _unwrapPrivateKeyLitActionCode = async () => {
         chain: 'ethereum',
         authSig: null,
       });
-      // console.log("HELLO")
-      console.log(saltedPrivKey)
       if (typeof saltedPrivKey === 'string') {
+        console.log("NOT SALTY")
+        console.log(saltedPrivKey)
         const privKey = removeSaltFromDecryptedKey(saltedPrivKey);
         Lit.Actions.setResponse({
           response: privKey
         })
       } else {
+        console.log("SALTY")
+        console.log(saltedPrivKey)
         Lit.Actions.setResponse({
           response: saltedPrivKey
         })
@@ -59,8 +61,8 @@ export async function executeDecryptPrivateAction(
   console.log(dataToEncryptHash);
 
   const litActionCode = `(${_unwrapPrivateKeyLitActionCode.toString()})();`;
-  console.log(litActionCode);
 
+  console.log("Going to call decrypt private action")
   const response = await litNodeClient.executeJs({
     sessionSigs: sessionSignatures,
     code: litActionCode,
@@ -71,5 +73,6 @@ export async function executeDecryptPrivateAction(
     }
   });
 
+  console.warn("Response")
   console.log(response)
 }
